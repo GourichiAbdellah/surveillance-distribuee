@@ -5,6 +5,7 @@ import common.MonitorService;
 
 import javax.swing.*;
 import javax.swing.table.DefaultTableModel;
+import javax.swing.table.TableRowSorter;
 import java.awt.*;
 import java.io.FileWriter;
 import java.io.PrintWriter;
@@ -12,6 +13,7 @@ import java.rmi.Naming;
 import java.text.SimpleDateFormat;
 import java.util.Date;
 import java.util.List;
+import java.util.Map;
 
 public class MonitorClient extends JFrame {
 
@@ -20,17 +22,27 @@ public class MonitorClient extends JFrame {
     private DefaultTableModel tableModel;
     private JTextArea alertsArea;
     private JSpinner thresholdSpinner;
+    private JTextField searchField;
+    private TableRowSorter<DefaultTableModel> sorter;
     private int cpuThreshold = 80; // Seuil par défaut
     private String currentUser;
+    private LoginDialog.Role currentRole;
+    
+    // Composants pour les boutons (pour gérer les droits)
+    private JButton exportBtn;
+    private JButton statsBtn;
+    private JButton historyBtn;
 
-    public MonitorClient(String user) {
-        super("Système de Surveillance Distribué - Connecté: " + user);
+    public MonitorClient(String user, LoginDialog.Role role) {
+        super("Système de Surveillance Distribué - " + user + " [" + role + "]");
         this.currentUser = user;
-        setSize(900, 650);
+        this.currentRole = role;
+        setSize(1000, 700);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
 
         initUI();
+        applyRoleRestrictions();
         connectToServer();
         startRefreshTimer();
     }
@@ -49,28 +61,57 @@ public class MonitorClient extends JFrame {
 
         toolBar.addSeparator();
 
+        // Recherche et filtrage
+        toolBar.add(new JLabel(" Rechercher: "));
+        searchField = new JTextField(12);
+        searchField.setMaximumSize(new Dimension(150, 30));
+        searchField.addActionListener(e -> filterTable());
+        toolBar.add(searchField);
+        
+        JButton filterBtn = new JButton("Filtrer");
+        filterBtn.addActionListener(e -> filterTable());
+        toolBar.add(filterBtn);
+        
+        JButton clearBtn = new JButton("Effacer");
+        clearBtn.addActionListener(e -> {
+            searchField.setText("");
+            sorter.setRowFilter(null);
+        });
+        toolBar.add(clearBtn);
+
+        toolBar.addSeparator();
+
         // Configuration du seuil
         toolBar.add(new JLabel(" Seuil CPU (%): "));
         thresholdSpinner = new JSpinner(new SpinnerNumberModel(80, 10, 100, 5));
         thresholdSpinner.setMaximumSize(new Dimension(60, 30));
         thresholdSpinner.addChangeListener(e -> {
             cpuThreshold = (int) thresholdSpinner.getValue();
-            System.out.println("Nouveau seuil: " + cpuThreshold + "%");
         });
         toolBar.add(thresholdSpinner);
 
         toolBar.addSeparator();
 
         // Bouton Export CSV
-        JButton exportBtn = new JButton("Exporter CSV");
+        exportBtn = new JButton("Exporter CSV");
         exportBtn.addActionListener(e -> exportToCSV());
         toolBar.add(exportBtn);
 
+        // Bouton Statistiques
+        statsBtn = new JButton("Statistiques");
+        statsBtn.addActionListener(e -> showStatistics());
+        toolBar.add(statsBtn);
+
+        // Bouton Historique
+        historyBtn = new JButton("Historique");
+        historyBtn.addActionListener(e -> showHistory());
+        toolBar.add(historyBtn);
+
         toolBar.addSeparator();
 
-        // Info utilisateur
+        // Info utilisateur et rôle
         toolBar.add(Box.createHorizontalGlue());
-        JLabel userLabel = new JLabel("Utilisateur: " + currentUser + "  ");
+        JLabel userLabel = new JLabel(currentUser + " [" + currentRole + "]  ");
         userLabel.setFont(new Font("Arial", Font.BOLD, 12));
         toolBar.add(userLabel);
 
@@ -81,16 +122,20 @@ public class MonitorClient extends JFrame {
         tableModel = new DefaultTableModel(columnNames, 0) {
             @Override
             public boolean isCellEditable(int row, int column) {
-                return false; // Table non éditable
+                return false;
             }
         };
         table = new JTable(tableModel);
         
-        // Appliquer les barres de progression aux colonnes CPU, Mémoire, Disque
+        // Configurer le tri et filtrage
+        sorter = new TableRowSorter<>(tableModel);
+        table.setRowSorter(sorter);
+        
+        // Appliquer les barres de progression
         ProgressBarRenderer progressRenderer = new ProgressBarRenderer();
-        table.getColumnModel().getColumn(1).setCellRenderer(progressRenderer); // CPU
-        table.getColumnModel().getColumn(2).setCellRenderer(progressRenderer); // Mémoire
-        table.getColumnModel().getColumn(3).setCellRenderer(progressRenderer); // Disque
+        table.getColumnModel().getColumn(1).setCellRenderer(progressRenderer);
+        table.getColumnModel().getColumn(2).setCellRenderer(progressRenderer);
+        table.getColumnModel().getColumn(3).setCellRenderer(progressRenderer);
 
         table.setRowHeight(25);
         table.getTableHeader().setFont(new Font("Arial", Font.BOLD, 12));
@@ -98,7 +143,7 @@ public class MonitorClient extends JFrame {
         add(new JScrollPane(table), BorderLayout.CENTER);
 
         // 3. Zone des alertes (Bas)
-        alertsArea = new JTextArea(6, 20);
+        alertsArea = new JTextArea(5, 20);
         alertsArea.setEditable(false);
         alertsArea.setForeground(Color.RED);
         alertsArea.setFont(new Font("Monospaced", Font.PLAIN, 11));
@@ -106,6 +151,115 @@ public class MonitorClient extends JFrame {
         alertPanel.setBorder(BorderFactory.createTitledBorder("Alertes Critiques"));
         alertPanel.add(new JScrollPane(alertsArea), BorderLayout.CENTER);
         add(alertPanel, BorderLayout.SOUTH);
+    }
+
+    // Appliquer les restrictions selon le rôle
+    private void applyRoleRestrictions() {
+        switch (currentRole) {
+            case ADMIN:
+                // Admin a accès à tout
+                break;
+            case OPERATEUR:
+                // Opérateur peut voir stats et historique mais pas exporter
+                exportBtn.setEnabled(false);
+                exportBtn.setToolTipText("Réservé aux administrateurs");
+                break;
+            case LECTEUR:
+                // Lecteur : lecture seule
+                exportBtn.setEnabled(false);
+                exportBtn.setToolTipText("Réservé aux administrateurs");
+                statsBtn.setEnabled(false);
+                statsBtn.setToolTipText("Réservé aux opérateurs et administrateurs");
+                historyBtn.setEnabled(false);
+                historyBtn.setToolTipText("Réservé aux opérateurs et administrateurs");
+                thresholdSpinner.setEnabled(false);
+                break;
+        }
+    }
+
+    // Filtrer la table selon le texte de recherche
+    private void filterTable() {
+        String text = searchField.getText().trim();
+        if (text.isEmpty()) {
+            sorter.setRowFilter(null);
+        } else {
+            sorter.setRowFilter(RowFilter.regexFilter("(?i)" + text));
+        }
+    }
+
+    // Afficher les statistiques
+    private void showStatistics() {
+        if (monitorService == null) return;
+        
+        try {
+            // Obtenir l'agent sélectionné ou tous
+            String agentId = "";
+            int selectedRow = table.getSelectedRow();
+            if (selectedRow >= 0) {
+                agentId = (String) table.getValueAt(selectedRow, 0);
+            }
+            
+            Map<String, Double> stats = monitorService.getStatistics(agentId);
+            
+            String title = agentId.isEmpty() ? "Tous les agents" : "Agent: " + agentId;
+            String message = String.format(
+                "=== Statistiques: %s ===\n\n" +
+                "CPU:\n" +
+                "  - Moyenne: %.1f%%\n" +
+                "  - Min: %.1f%%\n" +
+                "  - Max: %.1f%%\n\n" +
+                "Mémoire:\n" +
+                "  - Moyenne: %.1f%%\n" +
+                "  - Min: %.1f%%\n" +
+                "  - Max: %.1f%%\n\n" +
+                "Total enregistrements: %.0f\n" +
+                "Alertes critiques: %.0f",
+                title,
+                stats.get("avgCpu"), stats.get("minCpu"), stats.get("maxCpu"),
+                stats.get("avgMemory"), stats.get("minMemory"), stats.get("maxMemory"),
+                stats.get("totalRecords"), stats.get("criticalCount")
+            );
+            
+            JOptionPane.showMessageDialog(this, message, "Statistiques", JOptionPane.INFORMATION_MESSAGE);
+            
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Erreur: " + e.getMessage(), "Erreur", JOptionPane.ERROR_MESSAGE);
+        }
+    }
+
+    // Afficher l'historique
+    private void showHistory() {
+        if (monitorService == null) return;
+        
+        try {
+            String agentId = "";
+            int selectedRow = table.getSelectedRow();
+            if (selectedRow >= 0) {
+                agentId = (String) table.getValueAt(selectedRow, 0);
+            }
+            
+            List<String[]> history = monitorService.getHistory(agentId, 50);
+            
+            // Créer une fenêtre pour l'historique
+            JDialog historyDialog = new JDialog(this, "Historique" + (agentId.isEmpty() ? "" : " - " + agentId), true);
+            historyDialog.setSize(700, 400);
+            historyDialog.setLocationRelativeTo(this);
+            
+            String[] columns = {"Date/Heure", "Agent", "CPU (%)", "Mémoire (%)", "Disque (%)", "Statut"};
+            DefaultTableModel historyModel = new DefaultTableModel(columns, 0);
+            
+            for (String[] record : history) {
+                historyModel.addRow(record);
+            }
+            
+            JTable historyTable = new JTable(historyModel);
+            historyTable.setAutoCreateRowSorter(true);
+            historyDialog.add(new JScrollPane(historyTable));
+            historyDialog.setVisible(true);
+            
+        } catch (Exception e) {
+            JOptionPane.showMessageDialog(this, "Erreur: " + e.getMessage(), "Erreur", JOptionPane.ERROR_MESSAGE);
+        }
     }
 
     private void connectToServer() {
@@ -126,7 +280,6 @@ public class MonitorClient extends JFrame {
     }
 
     private void startRefreshTimer() {
-        // Rafraîchir toutes les 1 secondes (1000 ms)
         Timer timer = new Timer(1000, e -> updateData());
         timer.start();
     }
@@ -135,13 +288,10 @@ public class MonitorClient extends JFrame {
         if (monitorService == null) return;
 
         try {
-            // 1. Récupérer les agents
             List<AgentData> agents = monitorService.getAgents();
             
-            // Mettre à jour le tableau
-            tableModel.setRowCount(0); // Effacer les anciennes données
+            tableModel.setRowCount(0);
             for (AgentData agent : agents) {
-                // Déterminer le statut selon le seuil configuré
                 String status = agent.getCpuUsage() >= cpuThreshold ? "CRITIQUE" : "OK";
                 
                 Object[] row = {
@@ -155,7 +305,6 @@ public class MonitorClient extends JFrame {
                 tableModel.addRow(row);
             }
 
-            // 2. Récupérer les alertes
             List<String> alerts = monitorService.getAlerts();
             StringBuilder sb = new StringBuilder();
             for (String alert : alerts) {
@@ -176,10 +325,8 @@ public class MonitorClient extends JFrame {
         int result = fileChooser.showSaveDialog(this);
         if (result == JFileChooser.APPROVE_OPTION) {
             try (PrintWriter writer = new PrintWriter(new FileWriter(fileChooser.getSelectedFile()))) {
-                // En-têtes
                 writer.println("Agent ID,CPU (%),Mémoire (%),Disque (%),Timestamp,Statut");
                 
-                // Données
                 for (int i = 0; i < tableModel.getRowCount(); i++) {
                     StringBuilder line = new StringBuilder();
                     for (int j = 0; j < tableModel.getColumnCount(); j++) {
@@ -203,15 +350,12 @@ public class MonitorClient extends JFrame {
     }
 
     public static void main(String[] args) {
-        // Lancer l'interface dans le thread Swing
         SwingUtilities.invokeLater(() -> {
-            // 1. Afficher l'écran de login
             LoginDialog loginDialog = new LoginDialog(null);
             loginDialog.setVisible(true);
 
-            // 2. Vérifier l'authentification
             if (loginDialog.isAuthenticated()) {
-                new MonitorClient(loginDialog.getCurrentUser()).setVisible(true);
+                new MonitorClient(loginDialog.getCurrentUser(), loginDialog.getCurrentRole()).setVisible(true);
             } else {
                 System.out.println("Authentification annulée.");
                 System.exit(0);

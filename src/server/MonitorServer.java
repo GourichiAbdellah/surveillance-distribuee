@@ -50,6 +50,16 @@ public class MonitorServer extends UnicastRemoteObject implements MonitorService
         }
     }
 
+    @Override
+    public List<String[]> getHistory(String agentId, int maxRecords) throws RemoteException {
+        return HistoryManager.getHistory(agentId, maxRecords);
+    }
+
+    @Override
+    public Map<String, Double> getStatistics(String agentId) throws RemoteException {
+        return HistoryManager.getStatistics(agentId);
+    }
+
     // Thread pour écouter les messages UDP (Mises à jour périodiques)
     private void startUdpListener() {
         new Thread(() -> {
@@ -67,6 +77,8 @@ public class MonitorServer extends UnicastRemoteObject implements MonitorService
                         
                         AgentData data = (AgentData) ois.readObject();
                         agentsMap.put(data.getAgentId(), data);
+                        // Sauvegarder dans l'historique
+                        HistoryManager.saveToHistory(data);
                         System.out.println("UDP Reçu: " + data); // Debug
                     } catch (Exception e) {
                         System.err.println("Erreur lecture paquet UDP: " + e.getMessage());
