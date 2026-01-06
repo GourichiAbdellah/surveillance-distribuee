@@ -9,30 +9,59 @@ import java.net.DatagramPacket;
 import java.net.DatagramSocket;
 import java.net.InetAddress;
 import java.net.Socket;
-import java.util.Random;
+import java.lang.management.ManagementFactory;
+import com.sun.management.OperatingSystemMXBean;
+import java.io.File;
+import javax.swing.JOptionPane;
 
 public class MonitoringAgent {
 
     private String agentId;
-    private String serverAddress = "localhost";
+    private String serverAddress;
     private static final int UDP_PORT = 9876;
     private static final int TCP_PORT = 9877;
+    private OperatingSystemMXBean osBean;
 
-    public MonitoringAgent(String agentId) {
+    public MonitoringAgent(String agentId, String serverAddress) {
         this.agentId = agentId;
+        this.serverAddress = serverAddress;
+        try {
+            this.osBean = ManagementFactory.getPlatformMXBean(OperatingSystemMXBean.class);
+        } catch (Exception e) {
+            System.err.println("Impossible d'accéder aux métriques système: " + e.getMessage());
+        }
     }
 
     public void start() {
-        System.out.println("Agent " + agentId + " démarré.");
-        Random random = new Random();
-
+        System.out.println("Agent " + agentId + " démarré. Connexion au serveur: " + serverAddress);
+        
         new Thread(() -> {
             while (true) {
                 try {
-                    // 1. Simuler des données
-                    double cpu = 10 + random.nextDouble() * 90; // Entre 10 et 100
-                    double ram = 20 + random.nextDouble() * 60; // Entre 20 et 80
-                    double disk = 40 + random.nextDouble() * 20;
+                    // 1. Récupérer les vraies métriques
+                    double cpu = 0;
+                    double ram = 0;
+                    double disk = 0;
+
+                    if (osBean != null) {
+                        // CPU Usage (valeur entre 0.0 et 1.0 -> convertir en %)
+                        // La première valeur peut être NaN ou -1
+                        double sysLoad = osBean.getCpuLoad();
+                        cpu = (sysLoad < 0) ? 0 : sysLoad * 100;
+
+                        // RAM Usage
+                        long totalMem = osBean.getTotalMemorySize();
+                        long freeMem = osBean.getFreeMemorySize();
+                        ram = ((double)(totalMem - freeMem) / totalMem) * 100;
+                    }
+
+                    // Disk Usage (Partition racine)
+                    File root = new File("/");
+                    long totalSpace = root.getTotalSpace();
+                    long freeSpace = root.getFreeSpace();
+                    if (totalSpace > 0) {
+                        disk = ((double)(totalSpace - freeSpace) / totalSpace) * 100;
+                    }
 
                     AgentData data = new AgentData(agentId, cpu, ram, disk);
 
@@ -89,11 +118,38 @@ public class MonitoringAgent {
     }
 
     public static void main(String[] args) {
-        // Lancer plusieurs agents pour tester
-        new MonitoringAgent("Agent-Alpha").start();
-        
-        try { Thread.sleep(1000); } catch (Exception e) {}
-        
-        new MonitoringAgent("Agent-Beta").start();
+        String serverIp = "localhost";
+        String agentName = "Agent-" + System.getProperty("user.name");
+
+        try {
+            // 1. Priorité aux arguments en ligne de commande
+            if (args.length > 0) {
+                serverIp = args[0];
+                if (args.length > 1) {
+                    agentName = args[1];
+                }
+            } 
+            // 2. Sinon, mode interactif si graphique disponible
+            else if (!java.awt.GraphicsEnvironment.isHeadless()) {
+                String inputIp = JOptionPane.showInputDialog(null, 
+                    "Entrez l'adresse IP du serveur de monitoring :", 
+                    "Configuration Agent", 
+                    JOptionPane.QUESTION_MESSAGE);
+                if (inputIp != null && !inputIp.trim().isEmpty()) {
+                    serverIp = inputIp.trim();
+                }
+
+                String inputName = JOptionPane.showInputDialog(null, 
+                    "Entrez le nom de cet ordinateur (Agent ID) :", 
+                    agentName);
+                if (inputName != null && !inputName.trim().isEmpty()) {
+                    agentName = inputName.trim();
+                }
+            }
+        } catch (Exception e) {
+            System.out.println("Mode console uniquement.");
+        }
+
+        new MonitoringAgent(agentName, serverIp).start();
     }
 }

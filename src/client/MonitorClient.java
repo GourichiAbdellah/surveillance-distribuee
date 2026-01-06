@@ -27,16 +27,18 @@ public class MonitorClient extends JFrame {
     private int cpuThreshold = 80; // Seuil par défaut
     private String currentUser;
     private LoginDialog.Role currentRole;
+    private String serverAddress;
     
     // Composants pour les boutons (pour gérer les droits)
     private JButton exportBtn;
     private JButton statsBtn;
     private JButton historyBtn;
 
-    public MonitorClient(String user, LoginDialog.Role role) {
+    public MonitorClient(String user, LoginDialog.Role role, String serverAddress) {
         super("Système de Surveillance Distribué - " + user + " [" + role + "]");
         this.currentUser = user;
         this.currentRole = role;
+        this.serverAddress = serverAddress;
         setSize(1000, 700);
         setDefaultCloseOperation(JFrame.EXIT_ON_CLOSE);
         setLocationRelativeTo(null);
@@ -264,15 +266,16 @@ public class MonitorClient extends JFrame {
 
     private void connectToServer() {
         try {
-            String url = "rmi://localhost:1099/MonitorService";
+            String url = "rmi://" + serverAddress + ":1099/MonitorService";
             monitorService = (MonitorService) Naming.lookup(url);
-            System.out.println("Connecté au serveur RMI.");
+            System.out.println("Connecté au serveur RMI sur " + serverAddress);
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this, 
-                "Impossible de se connecter au serveur.\n\n" +
+                "Impossible de se connecter au serveur (" + serverAddress + ").\n\n" +
                 "Vérifiez que :\n" +
-                "1. Le fichier 'MonitorServer' est bien lancé.\n" +
-                "2. Il n'y a pas d'erreur dans la console du serveur.\n\n" +
+                "1. Le fichier 'MonitorServer' est bien lancé sur la machine cible.\n" +
+                "2. L'adresse IP est correcte.\n" +
+                "3. Le pare-feu autorise les connexions (Ports 1099, 9876, 9877).\n\n" +
                 "Erreur technique : " + e.getMessage(), 
                 "Erreur de Connexion", JOptionPane.ERROR_MESSAGE);
             System.exit(1);
@@ -355,7 +358,17 @@ public class MonitorClient extends JFrame {
             loginDialog.setVisible(true);
 
             if (loginDialog.isAuthenticated()) {
-                new MonitorClient(loginDialog.getCurrentUser(), loginDialog.getCurrentRole()).setVisible(true);
+                String inputIp = JOptionPane.showInputDialog(null, 
+                    "Entrez l'adresse IP du serveur de monitoring :", 
+                    "Configuration Client", 
+                    JOptionPane.QUESTION_MESSAGE);
+                
+                String serverAddress = "localhost";
+                if (inputIp != null && !inputIp.trim().isEmpty()) {
+                    serverAddress = inputIp.trim();
+                }
+
+                new MonitorClient(loginDialog.getCurrentUser(), loginDialog.getCurrentRole(), serverAddress).setVisible(true);
             } else {
                 System.out.println("Authentification annulée.");
                 System.exit(0);
