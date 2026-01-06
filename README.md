@@ -4,11 +4,12 @@ A Java-based distributed system for monitoring agents that tracks CPU, memory, a
 
 ## 🌟 Features
 
-- **Real-time Monitoring**: Track system metrics (CPU, RAM, Disk) from multiple agents
+- **Real-time Monitoring**: Track **REAL** system metrics (CPU, RAM, Disk) from multiple computers on the network
 - **Multi-Protocol Communication**:
   - **UDP**: Regular status updates from agents
   - **TCP**: Critical alert notifications
   - **RMI**: Client-server communication for data retrieval
+- **Network Support**: Monitor remote computers by connecting them to a central server IP
 - **Role-Based Access Control**: Admin and Guest roles with different permissions
 - **Alert System**: Automatic alerts when CPU usage exceeds threshold
 - **Data Visualization**: 
@@ -51,53 +52,51 @@ prjt/
 Compile all Java files from the project root:
 
 ```bash
-cd /home/abdo/vscode/java_guermah/prjt
-javac -d bin src/common/*.java src/server/*.java src/agent/*.java src/client/*.java
+javac -d bin -cp src src/common/*.java src/server/*.java src/agent/*.java src/client/*.java
 ```
 
-### 2. Start the RMI Registry
+### 2. Start the Server
 
-Open a new terminal and start the RMI registry:
+Open a new terminal and start the monitoring server. The server automatically starts the RMI registry.
 
 ```bash
-cd /home/abdo/vscode/java_guermah/prjt/bin
-rmiregistry 1099
+java -cp bin server.MonitorServer
 ```
 
-Leave this terminal running.
+The server will display the **available IP addresses** of the machine. 
+Make sure to note the IP address (e.g., `192.168.1.15`) if you want to connect agents from other computers.
 
-### 3. Start the Server
+### 3. Start Agent(s)
 
-Open a new terminal and start the monitoring server:
+To monitor a computer, run the agent on it. The agent will collect real CPU, RAM, and Disk usage.
 
+**Option A: Interactive Mode (GUI)**
 ```bash
-cd /home/abdo/vscode/java_guermah/prjt/bin
-java server.MonitorServer
+java -cp bin agent.MonitoringAgent
 ```
+*A small window will appear asking for the Server IP and the Computer Name.*
 
-The server will start listening on:
-- **UDP Port 9876**: For agent updates
-- **TCP Port 9877**: For critical alerts
-- **RMI Port 1099**: For client connections
-
-### 4. Start Agent(s)
-
-Open new terminal(s) for each agent you want to run:
-
+**Option B: Command Line (Headless/Script)**
 ```bash
-cd /home/abdo/vscode/java_guermah/prjt/bin
-java agent.MonitoringAgent Agent1
-```
-
-You can start multiple agents with different IDs:
-```bash
-java agent.MonitoringAgent Agent2
-java agent.MonitoringAgent Agent3
+# Usage: java agent.MonitoringAgent <ServerIP> <AgentName>
+java -cp bin agent.MonitoringAgent 192.168.1.15 "Office-PC"
 ```
 
 Each agent will:
-- Generate random CPU, RAM, and disk metrics
+- Collect real system metrics
 - Send updates via UDP every 2 seconds
+- Send TCP alerts if CPU usage > 80%
+
+### 4. Start the Client
+
+To visualize the data:
+
+```bash
+java -cp bin client.MonitorClient
+```
+1. Login (e.g., `admin` / `admin123`).
+2. Enter the **Server IP Address** when prompted.
+
 - Send TCP alerts when CPU exceeds 80%
 
 ### 5. Start the Client
