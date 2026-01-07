@@ -11,7 +11,7 @@ A Java-based distributed system for monitoring agents that tracks CPU, memory, a
   - **RMI**: Client-server communication for data retrieval
 - **Network Support**: Monitor remote computers by connecting them to a central server IP
 - **Role-Based Access Control**: Admin and Guest roles with different permissions
-- **Alert System**: Automatic alerts when CPU usage exceeds threshold
+- **Alert System**: Automatic alerts when CPU, Memory, or Disk usage exceeds threshold (Critical > 80%)
 - **Data Visualization**: 
   - Real-time table with progress bars
   - Sortable and searchable agent data

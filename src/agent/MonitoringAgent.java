@@ -69,9 +69,25 @@ public class MonitoringAgent {
                     sendUdpUpdate(data);
 
                     // 3. Vérifier seuil critique et envoyer via TCP si nécessaire
+                    boolean critical = false;
+                    StringBuilder msg = new StringBuilder();
+
                     if (cpu > 80.0) {
+                        critical = true;
+                        msg.append("CPU Surcharge: ").append(String.format("%.2f", cpu)).append("% ");
+                    }
+                    if (ram > 80.0) {
+                        critical = true;
+                        msg.append("Mémoire Surcharge: ").append(String.format("%.2f", ram)).append("% ");
+                    }
+                    if (disk > 80.0) {
+                        critical = true;
+                        msg.append("Disque Surcharge: ").append(String.format("%.2f", disk)).append("% ");
+                    }
+
+                    if (critical) {
                         data.setCritical(true);
-                        sendTcpAlert("CPU Surcharge: " + String.format("%.2f", cpu) + "%");
+                        sendTcpAlert(msg.toString());
                     }
 
                     // Pause de 2 secondes
