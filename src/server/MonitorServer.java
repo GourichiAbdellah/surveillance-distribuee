@@ -56,8 +56,18 @@ public class MonitorServer extends UnicastRemoteObject implements MonitorService
     }
 
     @Override
+    public List<String[]> getHistoryByDate(String agentId, java.util.Date startDate, java.util.Date endDate) throws RemoteException {
+        return HistoryManager.getHistoryByDate(agentId, startDate, endDate);
+    }
+
+    @Override
     public Map<String, Double> getStatistics(String agentId) throws RemoteException {
         return HistoryManager.getStatistics(agentId);
+    }
+
+    @Override
+    public Map<String, Double> getStatisticsByDate(String agentId, java.util.Date startDate, java.util.Date endDate) throws RemoteException {
+        return HistoryManager.getStatisticsByDate(agentId, startDate, endDate);
     }
 
     // Thread pour écouter les messages UDP (Mises à jour périodiques)
@@ -121,30 +131,15 @@ public class MonitorServer extends UnicastRemoteObject implements MonitorService
 
     public static void main(String[] args) {
         try {
-            // Afficher les IPs disponibles pour aider l'utilisateur
-            System.out.println("\nAdresses IP détectées sur ce serveur :");
-            String serverIp = null;
-            java.util.Enumeration<java.net.NetworkInterface> interfaces = java.net.NetworkInterface.getNetworkInterfaces();
-            while (interfaces.hasMoreElements()) {
-                java.net.NetworkInterface iface = interfaces.nextElement();
-                if (iface.isLoopback() || !iface.isUp()) continue;
-                java.util.Enumeration<java.net.InetAddress> addresses = iface.getInetAddresses();
-                while (addresses.hasMoreElements()) {
-                    java.net.InetAddress addr = addresses.nextElement();
-                    if (addr instanceof java.net.Inet4Address) {
-                        String ip = addr.getHostAddress();
-                        System.out.println(" - " + iface.getDisplayName() + " -> " + ip);
-                        if (serverIp == null) serverIp = ip; // Prendre la première IP trouvée
-                    }
-                }
+            // L'utilisateur choisit l'IP via les arguments (ex: java server.MonitorServer 192.168.1.15)
+            // Sinon, localhost est utilisé par défaut.
+            String serverIp = "localhost";
+            if (args.length > 0) {
+                serverIp = args[0];
             }
-            
-            if (serverIp != null) {
-                System.setProperty("java.rmi.server.hostname", serverIp);
-                System.out.println("\nConfiguration RMI sur l'IP : " + serverIp);
-            } else {
-                System.out.println("\nAucune IP externe détectée, RMI utilisera localhost.");
-            }
+
+            System.setProperty("java.rmi.server.hostname", serverIp);
+            System.out.println("Configuration RMI sur l'IP : " + serverIp);
 
             // Démarrer le registre RMI
             try {

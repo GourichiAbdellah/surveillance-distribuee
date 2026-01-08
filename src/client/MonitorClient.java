@@ -89,8 +89,23 @@ public class MonitorClient extends JFrame {
         thresholdSpinner.setMaximumSize(new Dimension(60, 30));
         thresholdSpinner.addChangeListener(e -> {
             cpuThreshold = (int) thresholdSpinner.getValue();
+            // Mettre à jour le renderer pour toutes les colonnes concernées
+            ProgressBarRenderer renderer = (ProgressBarRenderer) table.getColumnModel().getColumn(1).getCellRenderer();
+            if (renderer != null) renderer.setThreshold(cpuThreshold);
+            
+            renderer = (ProgressBarRenderer) table.getColumnModel().getColumn(2).getCellRenderer();
+            if (renderer != null) renderer.setThreshold(cpuThreshold);
+            
+            renderer = (ProgressBarRenderer) table.getColumnModel().getColumn(3).getCellRenderer();
+            if (renderer != null) renderer.setThreshold(cpuThreshold);
+            
+            table.repaint();
         });
         toolBar.add(thresholdSpinner);
+
+        toolBar.addSeparator();
+
+        // Bouton Export CSV
 
         toolBar.addSeparator();
 
@@ -194,39 +209,80 @@ public class MonitorClient extends JFrame {
         if (monitorService == null) return;
         
         try {
-            // Obtenir l'agent sélectionné ou tous
-            String agentId = "";
-            int selectedRow = table.getSelectedRow();
-            if (selectedRow >= 0) {
-                agentId = (String) table.getValueAt(selectedRow, 0);
+            String[] options = {"Statistiques en temps réel (Derniers 1000 records)", "Statistiques par Période"};
+            int choice = JOptionPane.showOptionDialog(this, 
+                "Quelles statistiques voulez-vous voir ?", 
+                "Type de Statistiques", 
+                JOptionPane.DEFAULT_OPTION, 
+                JOptionPane.QUESTION_MESSAGE, 
+                null, options, options[0]);
+
+            if (choice == 0) {
+                // Mode original : statistiques rapides basées sur les derniers ~1000 messages
+                String agentId = "";
+                int selectedRow = table.getSelectedRow();
+                if (selectedRow >= 0) {
+                    agentId = (String) table.getValueAt(selectedRow, 0);
+                }
+                displayStats(monitorService.getStatistics(agentId), agentId.isEmpty() ? "Tous les agents" : "Agent: " + agentId);
+                
+            } else if (choice == 1) {
+                // Mode nouveau : statistiques par période
+                JPanel panel = new JPanel(new GridLayout(4, 2));
+                JTextField startField = new JTextField(new SimpleDateFormat("yyyy-MM-dd 00:00:00").format(new Date()));
+                JTextField endField = new JTextField(new SimpleDateFormat("yyyy-MM-dd 23:59:59").format(new Date()));
+                
+                panel.add(new JLabel("Du (yyyy-MM-dd HH:mm:ss):"));
+                panel.add(startField);
+                panel.add(new JLabel("Au (yyyy-MM-dd HH:mm:ss):"));
+                panel.add(endField);
+                panel.add(new JLabel("Agent ID (Vide = Tous):"));
+                JTextField agentField = new JTextField();
+                
+                // Pré-remplir si une ligne est sélectionnée
+                int selectedRow = table.getSelectedRow();
+                if (selectedRow >= 0) {
+                    agentField.setText((String) table.getValueAt(selectedRow, 0));
+                }
+                panel.add(agentField);
+
+                int result = JOptionPane.showConfirmDialog(null, panel, "Sélectionner la Période", JOptionPane.OK_CANCEL_OPTION);
+                if (result == JOptionPane.OK_OPTION) {
+                    SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+                    Date start = sdf.parse(startField.getText());
+                    Date end = sdf.parse(endField.getText());
+                    String agentId = agentField.getText().trim();
+                    
+                    Map<String, Double> stats = monitorService.getStatisticsByDate(agentId.isEmpty() ? null : agentId, start, end);
+                    displayStats(stats, agentId.isEmpty() ? "Tous les agents" : "Agent: " + agentId);
+                }
             }
-            
-            Map<String, Double> stats = monitorService.getStatistics(agentId);
-            
-            String title = agentId.isEmpty() ? "Tous les agents" : "Agent: " + agentId;
-            String message = String.format(
-                "=== Statistiques: %s ===\n\n" +
-                "CPU:\n" +
-                "  - Moyenne: %.1f%%\n" +
-                "  - Min: %.1f%%\n" +
-                "  - Max: %.1f%%\n\n" +
-                "Mémoire:\n" +
-                "  - Moyenne: %.1f%%\n" +
-                "  - Min: %.1f%%\n" +
-                "  - Max: %.1f%%\n\n" +
-                "Total enregistrements: %.0f\n" +
-                "Alertes critiques: %.0f",
-                title,
-                stats.get("avgCpu"), stats.get("minCpu"), stats.get("maxCpu"),
-                stats.get("avgMemory"), stats.get("minMemory"), stats.get("maxMemory"),
-                stats.get("totalRecords"), stats.get("criticalCount")
-            );
-            
-            JOptionPane.showMessageDialog(this, message, "Statistiques", JOptionPane.INFORMATION_MESSAGE);
             
         } catch (Exception e) {
             JOptionPane.showMessageDialog(this, "Erreur: " + e.getMessage(), "Erreur", JOptionPane.ERROR_MESSAGE);
         }
+    }
+
+    private void displayStats(Map<String, Double> stats, String title) {
+        String message = String.format(
+            "=== Statistiques: %s ===\n\n" +
+            "CPU:\n" +
+            "  - Moyenne: %.1f%%\n" +
+            "  - Min: %.1f%%\n" +
+            "  - Max: %.1f%%\n\n" +
+            "Mémoire:\n" +
+            "  - Moyenne: %.1f%%\n" +
+            "  - Min: %.1f%%\n" +
+            "  - Max: %.1f%%\n\n" +
+            "Total enregistrements: %.0f\n" +
+            "Alertes critiques: %.0f",
+            title,
+            stats.get("avgCpu"), stats.get("minCpu"), stats.get("maxCpu"),
+            stats.get("avgMemory"), stats.get("minMemory"), stats.get("maxMemory"),
+            stats.get("totalRecords"), stats.get("criticalCount")
+        );
+        
+        JOptionPane.showMessageDialog(this, message, "Résultats Statistiques", JOptionPane.INFORMATION_MESSAGE);
     }
 
     // Afficher l'historique
@@ -292,16 +348,26 @@ public class MonitorClient extends JFrame {
 
         try {
             List<AgentData> agents = monitorService.getAgents();
+            Date now = new Date();
             
             tableModel.setRowCount(0);
             for (AgentData agent : agents) {
-                String status = agent.getCpuUsage() >= cpuThreshold ? "CRITIQUE" : "OK";
+                // Vérifier si l'agent est déconnecté (pas de mise à jour depuis 15 secondes)
+                long diff = now.getTime() - agent.getTimestamp().getTime();
+                boolean isOffline = diff > 15000;
+                
+                String status;
+                if (isOffline) {
+                    status = "OFFLINE";
+                } else {
+                    status = agent.getCpuUsage() >= cpuThreshold ? "CRITIQUE" : "OK";
+                }
                 
                 Object[] row = {
                     agent.getAgentId(),
-                    String.format("%.0f", agent.getCpuUsage()),
-                    String.format("%.0f", agent.getMemoryUsage()),
-                    String.format("%.0f", agent.getDiskUsage()),
+                    isOffline ? "0" : String.format("%.0f", agent.getCpuUsage()),
+                    isOffline ? "0" : String.format("%.0f", agent.getMemoryUsage()),
+                    isOffline ? "0" : String.format("%.0f", agent.getDiskUsage()),
                     new SimpleDateFormat("HH:mm:ss").format(agent.getTimestamp()),
                     status
                 };
@@ -321,15 +387,29 @@ public class MonitorClient extends JFrame {
     }
 
     private void exportToCSV() {
+        String[] options = {"Vue Actuelle (Agents Connectés)", "Historique Complet (Par Période)"};
+        int choice = JOptionPane.showOptionDialog(this, 
+            "Que voulez-vous exporter ?", 
+            "Type d'Export", 
+            JOptionPane.DEFAULT_OPTION, 
+            JOptionPane.QUESTION_MESSAGE, 
+            null, options, options[0]);
+
+        if (choice == 0) {
+            exportCurrentView();
+        } else if (choice == 1) {
+            exportHistoryByDate();
+        }
+    }
+
+    private void exportCurrentView() {
         JFileChooser fileChooser = new JFileChooser();
-        fileChooser.setSelectedFile(new java.io.File("surveillance_export_" + 
+        fileChooser.setSelectedFile(new java.io.File("surveillance_vue_" + 
             new SimpleDateFormat("yyyyMMdd_HHmmss").format(new Date()) + ".csv"));
         
-        int result = fileChooser.showSaveDialog(this);
-        if (result == JFileChooser.APPROVE_OPTION) {
+        if (fileChooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
             try (PrintWriter writer = new PrintWriter(new FileWriter(fileChooser.getSelectedFile()))) {
                 writer.println("Agent ID,CPU (%),Mémoire (%),Disque (%),Timestamp,Statut");
-                
                 for (int i = 0; i < tableModel.getRowCount(); i++) {
                     StringBuilder line = new StringBuilder();
                     for (int j = 0; j < tableModel.getColumnCount(); j++) {
@@ -339,15 +419,57 @@ public class MonitorClient extends JFrame {
                     }
                     writer.println(line.toString());
                 }
-                
-                JOptionPane.showMessageDialog(this, 
-                    "Données exportées avec succès!\n" + fileChooser.getSelectedFile().getAbsolutePath(),
-                    "Export CSV", JOptionPane.INFORMATION_MESSAGE);
-                    
+                JOptionPane.showMessageDialog(this, "Export réussi !");
             } catch (Exception e) {
-                JOptionPane.showMessageDialog(this, 
-                    "Erreur lors de l'export: " + e.getMessage(),
-                    "Erreur", JOptionPane.ERROR_MESSAGE);
+                JOptionPane.showMessageDialog(this, "Erreur: " + e.getMessage(), "Erreur", JOptionPane.ERROR_MESSAGE);
+            }
+        }
+    }
+
+    private void exportHistoryByDate() {
+        JPanel panel = new JPanel(new GridLayout(4, 2));
+        JTextField startField = new JTextField(new SimpleDateFormat("yyyy-MM-dd 00:00:00").format(new Date()));
+        JTextField endField = new JTextField(new SimpleDateFormat("yyyy-MM-dd 23:59:59").format(new Date()));
+        
+        panel.add(new JLabel("Du (yyyy-MM-dd HH:mm:ss):"));
+        panel.add(startField);
+        panel.add(new JLabel("Au (yyyy-MM-dd HH:mm:ss):"));
+        panel.add(endField);
+        panel.add(new JLabel("Agent ID (Vide = Tous):"));
+        JTextField agentField = new JTextField();
+        panel.add(agentField);
+
+        int result = JOptionPane.showConfirmDialog(null, panel, "Sélectionner la Période", JOptionPane.OK_CANCEL_OPTION);
+        if (result == JOptionPane.OK_OPTION) {
+            try {
+                SimpleDateFormat sdf = new SimpleDateFormat("yyyy-MM-dd HH:mm:ss");
+                Date start = sdf.parse(startField.getText());
+                Date end = sdf.parse(endField.getText());
+                String agentId = agentField.getText().trim();
+                
+                List<String[]> data = monitorService.getHistoryByDate(agentId.isEmpty() ? null : agentId, start, end);
+                
+                if (data.isEmpty()) {
+                    JOptionPane.showMessageDialog(this, "Aucune donnée trouvée pour cette période.");
+                    return;
+                }
+
+                JFileChooser fileChooser = new JFileChooser();
+                fileChooser.setSelectedFile(new java.io.File("historique_" + 
+                    new SimpleDateFormat("yyyyMMdd").format(start) + ".csv"));
+                
+                if (fileChooser.showSaveDialog(this) == JFileChooser.APPROVE_OPTION) {
+                    try (PrintWriter writer = new PrintWriter(new FileWriter(fileChooser.getSelectedFile()))) {
+                        writer.println("Date,Agent ID,CPU (%),Mémoire (%),Disque (%),Statut");
+                        for (String[] row : data) {
+                            writer.println(String.join(",", row));
+                        }
+                        JOptionPane.showMessageDialog(this, "Historique exporté (" + data.size() + " lignes) !");
+                    }
+                }
+
+            } catch (Exception e) {
+                JOptionPane.showMessageDialog(this, "Erreur (Format de date invalide ?): " + e.getMessage());
             }
         }
     }

@@ -6,9 +6,15 @@ import java.awt.*;
 
 public class ProgressBarRenderer extends JProgressBar implements TableCellRenderer {
 
+    private int threshold = 80;
+
     public ProgressBarRenderer() {
         super(0, 100);
         setStringPainted(true);
+    }
+    
+    public void setThreshold(int threshold) {
+        this.threshold = threshold;
     }
 
     @Override
@@ -30,9 +36,9 @@ public class ProgressBarRenderer extends JProgressBar implements TableCellRender
         setString(progress + "%");
 
         // Couleur selon le niveau
-        if (progress >= 80) {
+        if (progress >= threshold) {
             setForeground(Color.RED);
-        } else if (progress >= 60) {
+        } else if (progress >= (threshold * 0.75)) {
             setForeground(Color.ORANGE);
         } else {
             setForeground(new Color(0, 150, 0)); // Vert
